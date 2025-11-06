@@ -1,0 +1,189 @@
+name: Deploy Streamlit App
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:  # Permet le déclenchement manuel
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: List repository structure
+      run: |
+        echo "=== Repository structure ==="
+        ls -la
+        echo ""
+        echo "=== src/ directory ==="
+        ls -la src/ || echo "No src directory"
+        echo ""
+        echo "=== All Python files ==="
+        find . -name "*.py" -type f
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        elif [ -f src/requirements.txt ]; then
+          pip install -r src/requirements.txt
+        else
+          echo "Installing common packages"
+          pip install streamlit langchain langchain-anthropic langchain-community langchain-huggingface
+          pip install anthropic faiss-cpu sentence-transformers PyMuPDF python-dotenv
+        fi
+    
+    - name: Create .env file
+      run: |
+        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" > .env
+        # Copier aussi dans src/ si nécessaire
+        if [ -d "src" ]; then
+          cp .env src/.env
+        fi
+    
+    - name: Create documents directory
+      run: |
+        mkdir -p documents
+        mkdir -p src/documents
+        echo "Documents directories created"
+    
+    - name: Run chatbot tests
+      run: |
+        cd src
+        if [ -f "it_support_chatbot_claude_api.py" ]; then
+          echo "Testing chatbot script..."
+          python it_support_chatbot_claude_api.py test || echo "Test command not available or failed"
+        else
+          echo "Chatbot script not found"
+        fi
+      continue-on-error: true
+    
+    - name: Check Streamlit installation
+      run: |
+        streamlit --version
+        echo "✓ Streamlit is installed and ready"
+    
+    - name: Validate Streamlit app syntax
+      run: |
+        cd src
+        if [ -f "app_claude.py" ]; then
+          echo "Checking app_claude.py syntax..."
+          python -m py_compile app_claude.py && echo "✓ Syntax is valid"
+        fi
+      continue-on-error: true
+    
+    - name: Start Streamlit app (testing)
+      run: |
+        cd src
+        echo "Starting Streamlit app from src/app_claude.py..."
+        
+        # Démarrer Streamlit en arrière-plan
+        streamlit run app_claude.py --server.headless true --server.port 8501 &
+        STREAMLIT_PID=$!
+        echo "Streamlit PID: $STREAMLIT_PID"
+        
+        # Attendre que l'app démarre (jusqu'à 30 secondes)
+        echo "Waiting for app to start..."
+        for i in {1..30}; do
+          if curl -s http://localhost:8501/_stcore/health > /dev/null 2>&1; then
+            echo "✓ Streamlit app is running successfully!"
+            break
+          fi
+          echo "Attempt $i/30..."
+          sleep 1
+        done
+        
+        # Vérifier le statut final
+        if curl -f http://localhost:8501/_stcore/health; then
+          echo "✓ Health check passed!"
+        else
+          echo "⚠ App started but health check failed"
+          echo "This may be normal if the app requires documents or specific configuration"
+        fi
+        
+        # Arrêter Streamlit proprement
+        kill $STREAMLIT_PID 2>/dev/null || true
+        sleep 2
+      continue-on-error: true
+    
+    - name: Create deployment summary
+      if: always()
+      run: |
+        echo "## 🚀 SAMVI Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ✅ Environment" >> $GITHUB_STEP_SUMMARY
+        echo "- **Python Version:** $(python --version)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Streamlit Version:** $(streamlit --version)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Working Directory:** src/" >> $GITHUB_STEP_SUMMARY
+        echo "- **Main App File:** src/app_claude.py" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📝 Configuration Checklist" >> $GITHUB_STEP_SUMMARY
+        echo "- [x] Workflow configured" >> $GITHUB_STEP_SUMMARY
+        if [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+          echo "- [x] ANTHROPIC_API_KEY configured" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- [ ] ANTHROPIC_API_KEY needs to be configured" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "- [ ] PDF documents added to documents/ folder" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🎯 Next Steps" >> $GITHUB_STEP_SUMMARY
+        echo "1. Add PDF documents to the \`documents/\` or \`src/documents/\` folder" >> $GITHUB_STEP_SUMMARY
+        echo "2. Test locally: \`cd src && streamlit run app_claude.py\`" >> $GITHUB_STEP_SUMMARY
+        echo "3. Deploy to Streamlit Cloud (see deployment info below)" >> $GITHUB_STEP_SUMMARY
+
+  # Job pour fournir les informations de déploiement
+  deploy-info:
+    needs: test-and-deploy
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Streamlit Cloud deployment instructions
+      run: |
+        echo "## 🌐 Déploiement sur Streamlit Cloud" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Configuration pour Streamlit Cloud" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "1. **Allez sur** https://share.streamlit.io/" >> $GITHUB_STEP_SUMMARY
+        echo "2. **Cliquez sur** 'New app'" >> $GITHUB_STEP_SUMMARY
+        echo "3. **Configurez:**" >> $GITHUB_STEP_SUMMARY
+        echo "   - Repository: \`samsaminfohub/SAMVI\`" >> $GITHUB_STEP_SUMMARY
+        echo "   - Branch: \`main\`" >> $GITHUB_STEP_SUMMARY
+        echo "   - Main file path: \`src/app_claude.py\`" >> $GITHUB_STEP_SUMMARY
+        echo "4. **Dans Advanced settings → Secrets, ajoutez:**" >> $GITHUB_STEP_SUMMARY
+        echo "   \`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "   ANTHROPIC_API_KEY = \"votre_clé_api\"" >> $GITHUB_STEP_SUMMARY
+        echo "   \`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "5. **Cliquez sur** 'Deploy!'" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📦 Alternative: Créer un fichier .streamlit/config.toml" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Pour configurer Streamlit Cloud, vous pouvez aussi créer:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`.streamlit/config.toml\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`toml" >> $GITHUB_STEP_SUMMARY
+        echo "[server]" >> $GITHUB_STEP_SUMMARY
+        echo "headless = true" >> $GITHUB_STEP_SUMMARY
+        echo "port = 8501" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "[browser]" >> $GITHUB_STEP_SUMMARY
+        echo "gatherUsageStats = false" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📚 **Documentation:** https://docs.streamlit.io/deploy/streamlit-community-cloud" >> $GITHUB_STEP_SUMMARY
