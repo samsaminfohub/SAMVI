@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     software-properties-common \
     git \
     && rm -rf /var/lib/apt/lists/*
+	
 
 # Stage 2: Dependencies installation
 FROM base as dependencies
@@ -23,6 +24,14 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
+	
+RUN pip uninstall langchain langchain-core langchain-community langchain-anthropic langchain-huggingface langchain-text-splitters -y
+RUN pip install langchain
+RUN pip install langchain-anthropic langchain-community langchain-huggingface langchain-text-splitters
+RUN pip install langchain langchain-anthropic langchain-community langchain-huggingface langchain-text-splitters
+RUN pip install streamlit faiss-cpu pymupdf python-dotenv sentence-transformers
+RUN pip install tf-keras
+
 
 # Stage 3: Application
 FROM dependencies as application
