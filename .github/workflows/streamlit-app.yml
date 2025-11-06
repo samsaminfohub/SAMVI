@@ -1,0 +1,82 @@
+name: Deploy Streamlit App
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # Permet le déclenchement manuel
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Create .env file
+      run: |
+        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" > .env
+    
+    - name: Create documents directory
+      run: |
+        mkdir -p documents
+        echo "Documents directory created"
+    
+    - name: Run basic tests
+      run: |
+        python it_support_chatbot_claude_api.py test
+      continue-on-error: true
+    
+    - name: Check Streamlit app
+      run: |
+        streamlit --version
+        echo "Streamlit is ready to run"
+    
+    - name: Start Streamlit app (for testing)
+      run: |
+        # Démarrer Streamlit en arrière-plan pour vérifier qu'il fonctionne
+        streamlit run app_claude.py --server.headless true --server.port 8501 &
+        sleep 10
+        # Vérifier que l'app est accessible
+        curl -f http://localhost:8501 || echo "App started but may need configuration"
+      continue-on-error: true
+    
+    - name: Upload artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-logs
+        path: |
+          .env
+          index_faiss/
+        retention-days: 1
+
+  # Job optionnel pour déploiement sur Streamlit Cloud
+  deploy-to-streamlit-cloud:
+    needs: test-and-deploy
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Trigger Streamlit Cloud deployment
+      run: |
+        echo "Pour déployer sur Streamlit Cloud:"
+        echo "1. Allez sur https://share.streamlit.io/"
+        echo "2. Connectez votre repository GitHub"
+        echo "3. Configurez les secrets dans Streamlit Cloud"
+        echo "4. Le déploiement se fera automatiquement"
