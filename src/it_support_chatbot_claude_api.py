@@ -35,11 +35,28 @@ from dotenv import load_dotenv
 def setup_environment():
     """
     Set up environment variables and API keys
+    
+    For automated/production use: Set ANTHROPIC_API_KEY in .env file or environment
+    For interactive use: Will prompt if key not found
     """
+    import sys
+    
     load_dotenv()
     
     if "ANTHROPIC_API_KEY" not in os.environ:
-        os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter your Anthropic API Key: ")
+        # Check if running in interactive mode
+        if sys.stdin.isatty():
+            # Interactive terminal - prompt for key
+            os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter your Anthropic API Key: ")
+        else:
+            # Non-interactive (pipeline/automated) - fail with clear message
+            raise ValueError(
+                "ANTHROPIC_API_KEY not found!\n"
+                "For automated/production use, set the key in one of these ways:\n"
+                "1. Create .env file with: ANTHROPIC_API_KEY=your-key-here\n"
+                "2. Set environment variable: export ANTHROPIC_API_KEY=your-key-here\n"
+                "3. Docker: Add to docker-compose.yml environment section"
+            )
     
     print("✓ Environment configured successfully")
 

@@ -1,0 +1,19 @@
+# 1. Completely uninstall all langchain packages
+pip uninstall langchain langchain-core langchain-community langchain-anthropic langchain-huggingface langchain-text-splitters -y
+
+# 2. Install the complete langchain package (this includes langchain.chains)
+pip install langchain
+
+# 3. Install the other required packages
+pip install langchain-anthropic langchain-community langchain-huggingface langchain-text-splitters
+
+
+
+
+
+# Install required packages
+pip install langchain langchain-anthropic langchain-community langchain-huggingface langchain-text-splitters
+pip install streamlit faiss-cpu pymupdf python-dotenv sentence-transformers
+
+# Run the fixed app
+streamlit run app_claude_fixed.py

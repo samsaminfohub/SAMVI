@@ -2,18 +2,19 @@
 IT Support Chatbot - Streamlit Web Application
 Using Claude API (Anthropic) for Healthcare IT Support
 
-Run with: streamlit run app_claude.py
+FIXED VERSION - Uses LCEL instead of legacy chains
+Run with: streamlit run app_claude_fixed.py
 """
 
 import streamlit as st
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain.chains import create_history_aware_retriever, create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough, RunnableBranch
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import PyMuPDFLoader
 from pathlib import Path
 from dotenv import load_dotenv
@@ -55,7 +56,7 @@ def extract_text_pdf(file_path):
 
 
 @st.cache_resource
-def config_retriever(folder_path="./documents"):
+def config_retriever(folder_path="../documents"):
     """Configure retriever with document indexing"""
     
     with st.spinner("Loading and indexing documents..."):
@@ -97,30 +98,28 @@ def config_retriever(folder_path="./documents"):
     return retriever
 
 
+def format_docs(docs):
+    """Format retrieved documents into a string"""
+    return "\n\n".join([doc.page_content for doc in docs])
+
+
 def config_rag_chain(llm, retriever):
-    """Configure RAG chain"""
+    """Configure RAG chain using LCEL (LangChain Expression Language)"""
     
-    # Contextualization prompt
-    context_q_system_prompt = """Given the following chat history and the follow-up question 
-    which might reference context in the chat history, formulate a standalone question which 
-    can be understood without the chat history. Do NOT answer the question, just reformulate 
-    it if needed and otherwise return it as is."""
+    # Contextualization prompt - reformulates question based on chat history
+    contextualize_q_system_prompt = """Given a chat history and the latest user question 
+    which might reference context in the chat history, formulate a standalone question 
+    which can be understood without the chat history. Do NOT answer the question, 
+    just reformulate it if needed and otherwise return it as is."""
     
-    context_q_prompt = ChatPromptTemplate.from_messages([
-        ("system", context_q_system_prompt),
+    contextualize_q_prompt = ChatPromptTemplate.from_messages([
+        ("system", contextualize_q_system_prompt),
         MessagesPlaceholder("chat_history"),
-        ("human", "Question: {input}"),
+        ("human", "{input}"),
     ])
     
-    # History-aware retriever
-    history_aware_retriever = create_history_aware_retriever(
-        llm=llm,
-        retriever=retriever,
-        prompt=context_q_prompt
-    )
-    
     # Q&A system prompt
-    system_prompt = """You are a helpful IT Support virtual assistant for a healthcare organization.
+    qa_system_prompt = """You are a helpful IT Support virtual assistant for a healthcare organization.
     You provide accurate, concise answers to IT support questions.
     
     Use the following context to answer questions:
@@ -133,18 +132,30 @@ def config_rag_chain(llm, retriever):
     """
     
     qa_prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
+        ("system", qa_system_prompt),
         MessagesPlaceholder("chat_history"),
-        ("human", "Question: {input}"),
+        ("human", "{input}"),
     ])
     
-    # Q&A chain
-    qa_chain = create_stuff_documents_chain(llm, qa_prompt)
+    # Create contextualized question chain
+    contextualize_q_chain = contextualize_q_prompt | llm | StrOutputParser()
     
-    # Final RAG chain
-    rag_chain = create_retrieval_chain(
-        history_aware_retriever,
-        qa_chain,
+    # Function to get contextualized question or original input
+    def get_contextualized_question(input_dict):
+        if input_dict.get("chat_history"):
+            return contextualize_q_chain.invoke(input_dict)
+        return input_dict["input"]
+    
+    # Create the RAG chain using LCEL
+    rag_chain = (
+        RunnablePassthrough.assign(
+            context=lambda x: format_docs(
+                retriever.invoke(get_contextualized_question(x))
+            )
+        )
+        | qa_prompt
+        | llm
+        | StrOutputParser()
     )
     
     return rag_chain
@@ -153,17 +164,17 @@ def config_rag_chain(llm, retriever):
 def chat_llm(rag_chain, user_input):
     """Process user input and update chat history"""
     
-    st.session_state.chat_history.append(HumanMessage(content=user_input))
-    
+    # Get response
     response = rag_chain.invoke({
         "input": user_input,
         "chat_history": st.session_state.chat_history
     })
     
-    res = response["answer"]
-    st.session_state.chat_history.append(AIMessage(content=res))
+    # Update chat history
+    st.session_state.chat_history.append(HumanMessage(content=user_input))
+    st.session_state.chat_history.append(AIMessage(content=response))
     
-    return res
+    return response
 
 
 # ============================================================================
@@ -183,7 +194,7 @@ def main():
         model_options = {
             "Claude Sonnet 4 (Recommended)": "claude-sonnet-4-20250514",
             "Claude Opus 4 (Most Capable)": "claude-opus-4-20250514",
-            "Claude Sonnet 3.5": "claude-sonnet-3-5-20241022"
+            "Claude Sonnet 3.5": "claude-3-5-sonnet-20241022"
         }
         
         selected_model = st.selectbox(
@@ -225,9 +236,7 @@ def main():
         
         # Clear chat button
         if st.button("🗑️ Clear Chat History"):
-            st.session_state.chat_history = [
-                AIMessage(content="Hi! I'm your IT Support assistant. How can I help you today?")
-            ]
+            st.session_state.chat_history = []
             st.rerun()
         
         st.divider()
@@ -240,13 +249,12 @@ def main():
         - **RAG** (Retrieval Augmented Generation)
         - **FAISS** for vector search
         - **HuggingFace** embeddings
+        - **LCEL** (LangChain Expression Language)
         """)
     
     # Initialize session state
     if "chat_history" not in st.session_state:
-        st.session_state.chat_history = [
-            AIMessage(content="Hi! I'm your IT Support assistant. How can I help you today?")
-        ]
+        st.session_state.chat_history = []
     
     if "retriever" not in st.session_state:
         st.session_state.retriever = None
@@ -260,6 +268,11 @@ def main():
         with st.spinner("Loading Claude model..."):
             st.session_state.llm = load_llm(current_model, temperature)
             st.session_state.current_model = current_model
+    
+    # Display welcome message if no chat history
+    if not st.session_state.chat_history:
+        with st.chat_message("assistant", avatar="🤖"):
+            st.markdown("Hi! I'm your IT Support assistant. How can I help you today?")
     
     # Display chat history
     for message in st.session_state.chat_history:
@@ -303,7 +316,12 @@ def main():
                     st.markdown("""
                     1. Set your ANTHROPIC_API_KEY
                     2. Added PDF documents to the documents folder
-                    3. Installed all required packages
+                    3. Installed all required packages:
+                       ```
+                       pip install langchain langchain-anthropic langchain-community 
+                       pip install langchain-huggingface langchain-text-splitters
+                       pip install streamlit faiss-cpu pymupdf python-dotenv sentence-transformers
+                       ```
                     """)
 
 
