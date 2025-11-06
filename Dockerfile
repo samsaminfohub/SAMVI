@@ -28,8 +28,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 FROM dependencies as application
 
 # Copy application files
-COPY /src/it_support_chatbot_claude_api.py .
-COPY /src/app_claude.py .
+COPY src/it_support_chatbot_claude_api.py ./
+COPY src/app_claude.py ./
 
 # Create necessary directories
 RUN mkdir -p documents index_faiss
