@@ -1,11 +1,11 @@
-# Core LangChain packages
+# Core dependencies
 langchain>=0.1.0
+langchain-core>=0.1.0
 langchain-anthropic>=0.1.0
 langchain-community>=0.0.20
 langchain-huggingface>=0.0.1
-langchain-core>=0.1.0
 
-# Anthropic Claude API
+# Anthropic API
 anthropic>=0.18.0
 
 # Vector store and embeddings
@@ -14,14 +14,14 @@ sentence-transformers>=2.2.2
 
 # Document processing
 PyMuPDF>=1.23.0
-pypdf>=3.17.0
 
 # Web interface
 streamlit>=1.30.0
 
-# Environment management
+# Environment variables
 python-dotenv>=1.0.0
 
-# Utilities
-pydantic>=2.0.0
-typing-extensions>=4.8.0
+# Additional dependencies that may be needed
+numpy>=1.24.0
+pandas>=2.0.0
+typing-extensions>=4.5.0
