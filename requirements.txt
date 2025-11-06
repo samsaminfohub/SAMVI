@@ -1,0 +1,27 @@
+# Core LangChain packages
+langchain>=0.1.0
+langchain-anthropic>=0.1.0
+langchain-community>=0.0.20
+langchain-huggingface>=0.0.1
+langchain-core>=0.1.0
+
+# Anthropic Claude API
+anthropic>=0.18.0
+
+# Vector store and embeddings
+faiss-cpu>=1.7.4
+sentence-transformers>=2.2.2
+
+# Document processing
+PyMuPDF>=1.23.0
+pypdf>=3.17.0
+
+# Web interface
+streamlit>=1.30.0
+
+# Environment management
+python-dotenv>=1.0.0
+
+# Utilities
+pydantic>=2.0.0
+typing-extensions>=4.8.0
