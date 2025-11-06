@@ -30,8 +30,6 @@ FROM dependencies as application
 # Copy application files
 COPY it_support_chatbot_claude_api.py .
 COPY app_claude.py .
-COPY README.md .
-COPY SETUP_GUIDE.md .
 
 # Create necessary directories
 RUN mkdir -p documents index_faiss
